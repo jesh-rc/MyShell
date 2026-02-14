@@ -22,6 +22,8 @@ Requirements (Refer to the document for accuracy and details):
 #include <limits.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <string.h>
+#include <dirent.h>
 
 
 
@@ -35,19 +37,248 @@ static void reap_zombies(void) {
 }
 
 static int process_line(char *line) {
-    /*
-    Implement your program from here (your own design).
-    Return:
-      0 -> quit
-      1 -> continue
-    */
 
-    (void)line;//delete this line
+    // Remove newline safely
+    char *newline = strchr(line, '\n');
+    if (newline != NULL) {
+        *newline = '\0';
+    }
+
+    // If empty line
+    if (line[0] == '\0') {
+        return 1;
+    }
+
+		// Extract first token
+		char *cmd = strtok(line, " \t");
+		if (cmd == NULL) {
+				return 1;
+		}
+
+		// Check for output redirection
+		char *outfile = NULL;
+		int append = 0;
+
+		// Collect arguments and check for redirection
+		char *args[64];
+		int nargs = 0;
+		args[nargs++] = cmd;
+
+		char *tok;
+		while ((tok = strtok(NULL, " \t")) != NULL) {
+				if (strcmp(tok, ">") == 0) {
+						outfile = strtok(NULL, " \t");
+						append = 0;
+				} 
+				else if (strcmp(tok, ">>") == 0) {
+						outfile = strtok(NULL, " \t");
+						append = 1;
+				} 
+				else {
+						args[nargs++] = tok;
+				}
+		}
+		args[nargs] = NULL;
+
+
+    int saved_stdout = -1;
+    if (outfile != NULL) {
+        saved_stdout = dup(1);  // save original stdout
+
+        FILE *f;
+        if (append) {
+            f = fopen(outfile, "a");
+        } else {
+            f = fopen(outfile, "w");
+        }
+
+        if (f == NULL) {
+            perror("fopen");
+            return 1;
+        }
+
+        dup2(fileno(f), 1);  // redirect stdout
+        fclose(f);
+    }
+
+    // quit command
+    if (strcmp(cmd, "quit") == 0) {
+        return 0;
+    }
+
+    // environ command
+    if (strcmp(cmd, "environ") == 0) {
+
+        extern char **environ;
+        char **env = environ;
+
+        while (*env != NULL) {
+            printf("%s\n", *env);
+            env++;
+        }
+
+        if (saved_stdout != -1) { dup2(saved_stdout, 1); close(saved_stdout); }
+        return 1;
+    }
+
+    // echo command
+		if (strcmp(cmd, "echo") == 0) {
+
+				for (int i = 1; args[i] != NULL; i++) {
+						printf("%s", args[i]);
+						if (args[i + 1] != NULL) {
+								printf(" ");
+						}
+				}
+
+				printf("\n");
+
+				if (saved_stdout != -1) {
+						dup2(saved_stdout, 1);
+						close(saved_stdout);
+				}
+
+				return 1;
+		}
+
+    // cd command
+    if (strcmp(cmd, "cd") == 0) {
+        char *dir = strtok(NULL, " \t");
+
+        // If no argument, go to HOME
+        if (dir == NULL) {
+            dir = getenv("HOME");
+            if (dir == NULL) {
+                fprintf(stderr, "cd: HOME not set\n");
+                return 1;
+            }
+        }
+
+        if (chdir(dir) != 0) {
+            perror("cd");
+        }
+
+        return 1;
+    }
+
+    // clr command
+    if (strcmp(cmd, "clr") == 0) {
+        printf("\033[2J\033[H");
+        fflush(stdout);  // make sure it happens immediately
+        return 1;
+    }
+
+		// help command
+		if (strcmp(cmd, "help") == 0) {
+
+				// If output is redirected, just print file normally
+				if (outfile != NULL) {
+
+						FILE *f = fopen("README.md", "r");
+						if (f == NULL) {
+								perror("help");
+						} else {
+								char buffer[1024];
+								while (fgets(buffer, sizeof(buffer), f)) {
+										printf("%s", buffer);
+								}
+								fclose(f);
+						}
+
+						if (saved_stdout != -1) {
+								dup2(saved_stdout, 1);
+								close(saved_stdout);
+						}
+
+						return 1;
+				}
+
+				// Otherwise use 'more' (interactive mode)
+				pid_t pid = fork();
+
+				if (pid < 0) {
+						perror("fork");
+						return 1;
+				}
+
+				if (pid == 0) {
+						char *args[] = {"more", "README.md", NULL};
+						execvp("more", args);
+						perror("execvp");
+						exit(1);
+				} else {
+						waitpid(pid, NULL, 0);
+				}
+
+				return 1;
+		}
+
+    // pause command
+    if (strcmp(cmd, "pause") == 0) {
+        printf("Press Enter to continue...");
+        fflush(stdout);  // make sure message is printed
+
+        while (getchar() != '\n') {
+            ; // wait until newline
+        }
+
+        return 1;
+    }
+
+    // dir command
+    if (strcmp(cmd, "dir") == 0) {
+        char *path = strtok(NULL, " \t");
+
+        // If no path is provided, use current directory
+        if (path == NULL) {
+            path = ".";
+        }
+
+        DIR *dir = opendir(path);
+        if (dir == NULL) {
+            perror("dir");
+            if (saved_stdout != -1) { dup2(saved_stdout, 1); close(saved_stdout); }
+            return 1;
+        }
+
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            printf("%s\n", entry->d_name);
+        }
+
+        closedir(dir);
+        if (saved_stdout != -1) { dup2(saved_stdout, 1); close(saved_stdout); }
+        return 1;
+    }
+
+    // Restore stdout (if not already restored)
+    if (saved_stdout != -1) {
+        dup2(saved_stdout, 1);
+        close(saved_stdout);
+    }
+
+    printf("Command not implemented yet.\n");
+
     return 1;
 }
 
+
+
 int main(int argc, char *argv[]) {
     //TODO: set environment variable "shell" to the full path of myshell
+    
+    // Set environment variable "shell" to full path of myshell
+    char fullpath[PATH_MAX];
+
+    if (realpath(argv[0], fullpath) == NULL) {
+        perror("realpath");
+        exit(1);
+    }
+
+    if (setenv("shell", fullpath, 1) != 0) {
+        perror("setenv");
+        exit(1);
+    }
 
     FILE *in = stdin;
     if (argc == 2) {
@@ -78,6 +309,7 @@ int main(int argc, char *argv[]) {
     if (in != stdin) fclose(in);
     return 0;
 }
+
 
 
 /*
