@@ -24,6 +24,7 @@ Requirements (Refer to the document for accuracy and details):
 #include <sys/wait.h>
 #include <string.h>
 #include <dirent.h>
+#include <errno.h>
 
 
 
@@ -32,8 +33,9 @@ Requirements (Refer to the document for accuracy and details):
 //Other functions needed ...
 
 static void reap_zombies(void) {
-    // OPTIONAL (but recommended if you support '&')
-    // Perhaps this will be useful: waitpid(-1, NULL, WNOHANG)
+    while (waitpid(-1, NULL, WNOHANG) > 0) {
+        // reaping zombie processes
+    }
 }
 
 static int process_line(char *line) {
@@ -64,20 +66,34 @@ static int process_line(char *line) {
 		int nargs = 0;
 		args[nargs++] = cmd;
 
+    int background = 0;
 		char *tok;
-		while ((tok = strtok(NULL, " \t")) != NULL) {
-				if (strcmp(tok, ">") == 0) {
-						outfile = strtok(NULL, " \t");
-						append = 0;
-				} 
-				else if (strcmp(tok, ">>") == 0) {
-						outfile = strtok(NULL, " \t");
-						append = 1;
-				} 
-				else {
-						args[nargs++] = tok;
-				}
-		}
+    char *infile = NULL;
+
+    while ((tok = strtok(NULL, " \t")) != NULL) {
+
+        if (strcmp(tok, "<") == 0) {
+            infile = strtok(NULL, " \t");
+        }
+
+        else if (strcmp(tok, ">") == 0) {
+            outfile = strtok(NULL, " \t");
+            append = 0;
+        }
+
+        else if (strcmp(tok, ">>") == 0) {
+            outfile = strtok(NULL, " \t");
+            append = 1;
+        }
+
+        else if (strcmp(tok, "&") == 0) {
+          background = 1;
+        }
+
+        else {
+            args[nargs++] = tok;
+        }
+    }
 		args[nargs] = NULL;
 
 
@@ -143,19 +159,30 @@ static int process_line(char *line) {
 
     // cd command
     if (strcmp(cmd, "cd") == 0) {
-        char *dir = strtok(NULL, " \t");
 
-        // If no argument, go to HOME
+        char *dir = args[1];   // use parsed args instead of strtok again
+
+        // If no argument → print current directory
         if (dir == NULL) {
-            dir = getenv("HOME");
-            if (dir == NULL) {
-                fprintf(stderr, "cd: HOME not set\n");
-                return 1;
+            char cwd[PATH_MAX];
+            if (getcwd(cwd, sizeof(cwd)) != NULL) {
+                printf("%s\n", cwd);
+            } else {
+                perror("getcwd");
             }
+            return 1;
         }
 
+        // Try changing directory
         if (chdir(dir) != 0) {
             perror("cd");
+            return 1;
+        }
+
+        // Update PWD environment variable
+        char cwd[PATH_MAX];
+        if (getcwd(cwd, sizeof(cwd)) != NULL) {
+            setenv("PWD", cwd, 1);
         }
 
         return 1;
@@ -174,7 +201,7 @@ static int process_line(char *line) {
 				// If output is redirected, just print file normally
 				if (outfile != NULL) {
 
-						FILE *f = fopen("README.md", "r");
+						FILE *f = fopen("readme", "r");
 						if (f == NULL) {
 								perror("help");
 						} else {
@@ -202,7 +229,7 @@ static int process_line(char *line) {
 				}
 
 				if (pid == 0) {
-						char *args[] = {"more", "README.md", NULL};
+						char *args[] = {"more", "readme", NULL};
 						execvp("more", args);
 						perror("execvp");
 						exit(1);
@@ -227,7 +254,7 @@ static int process_line(char *line) {
 
     // dir command
     if (strcmp(cmd, "dir") == 0) {
-        char *path = strtok(NULL, " \t");
+        char *path = args[1];
 
         // If no path is provided, use current directory
         if (path == NULL) {
@@ -257,9 +284,70 @@ static int process_line(char *line) {
         close(saved_stdout);
     }
 
-    printf("Command not implemented yet.\n");
+    // ---------- EXTERNAL COMMAND ----------
+
+    pid_t pid = fork();
+
+    if (pid < 0) {
+        perror("fork");
+        return 1;
+    }
+
+    if (pid == 0) {
+        // CHILD PROCESS
+
+        // INPUT REDIRECTION
+        if (infile != NULL) {
+
+            FILE *f = fopen(infile, "r");
+            if (f == NULL) {
+                perror("fopen");
+                exit(1);
+            }
+
+            dup2(fileno(f), 0);  // redirect stdin
+            fclose(f);
+        }
+
+        // OUTPUT REDIRECTION
+        if (outfile != NULL) {
+            FILE *f;
+            if (append) {
+                f = fopen(outfile, "a");
+            } else {
+                f = fopen(outfile, "w");
+            }
+
+            if (f == NULL) {
+                perror("fopen");
+                exit(1);
+            }
+
+            dup2(fileno(f), 1);
+            fclose(f);
+        }
+
+        // Set parent environment variable
+        if (getenv("shell") != NULL) {
+            setenv("parent", getenv("shell"), 1);
+        }
+
+        execvp(cmd, args);
+
+        perror("execvp");
+        exit(1);
+    }
+    else {
+      if (!background) {
+          waitpid(pid, NULL, 0);
+      }
+      else {
+          printf("[background pid %d]\n", pid);
+      }
+  }
 
     return 1;
+
 }
 
 

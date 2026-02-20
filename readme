@@ -1,0 +1,95 @@
+myshell – User Manual
+
+--Overview--
+
+myshell is a simple Unix-like shell written in C. It supports:
+
+Internal commands (built into the shell)
+
+External commands (via fork() + execvp())
+
+I/O redirection (<, >, >>)
+
+Background execution using &
+
+Batch mode: execute commands from a file
+
+Environment variables: shell and parent
+
+The shell prompt shows the current directory:
+
+>myshell:/current/directory$
+
+--Starting myshell--
+
+Interactive Mode:
+./myshell
+
+Batch Mode:
+./myshell batchfile.txt
+
+The shell executes commands from the file sequentially and exits at EOF.
+
+--Internal Commands--
+
+| Command       | Description                                                                                  | Example                                 |
+| ------------- | -------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `cd [dir]`    | Change directory. If no `dir` is provided, prints current directory. Updates `PWD` variable. | `cd /tmp`<br>`cd`                       |
+| `clr`         | Clear the terminal screen                                                                    | `clr`                                   |
+| `dir [dir]`   | List files in `dir` (or current directory if not specified)                                  | `dir`<br>`dir /etc`                     |
+| `environ`     | Print all environment variables                                                              | `environ`                               |
+| `echo [text]` | Print text to screen or redirect to file                                                     | `echo Hello`<br>`echo Hello > file.txt` |
+| `help`        | Display `readme` file. Can redirect output                                                   | `help`<br>`help > help.txt`             |
+| `pause`       | Pause shell until Enter is pressed                                                           | `pause`                                 |
+| `quit`        | Exit the shell                                                                               | `quit`                                  |
+
+--External Commands--
+
+Any command not recognized as internal is executed via fork() and execvp().
+
+Supports:
+
+Input redirection: < file
+
+Output redirection: > file (overwrite)
+
+Output append: >> file
+
+Background execution: &
+
+Examples:
+
+ls -l > output.txt
+cat < input.txt
+sleep 10 &
+
+--Redirection--
+
+| Syntax            | Effect                                |
+| ----------------- | ------------------------------------- |
+| `command > file`  | Overwrites `file` with command output |
+| `command >> file` | Appends command output to `file`      |
+| `command < file`  | Uses `file` as command input          |
+
+--Background Execution--
+
+Add & at the end of a command to run it in the background.
+
+Shell prints child PID:
+
+sleep 10 &
+[background pid 12345]
+
+--Environment Variables--
+
+shell → full path to shell executable
+
+parent → set in child processes before executing external commands
+
+--Batch Mode--
+
+Run a series of commands from a file:
+
+./myshell batchfile.txt
+
+Shell executes commands sequentially until EOF.
