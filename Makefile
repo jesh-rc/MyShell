@@ -1,12 +1,12 @@
 # Makefile for Lab 2 – A Simple Shell
-# Author: Your Name
+# Author: Jeshurun Constantine
 # Compiles myshell
 
 # Compiler
 CC = gcc
 
 # Compiler flags
-CFLAGS = -Wall -Wextra -std=c11
+CFLAGS = -Wall -Wextra -std=c11 -D_POSIX_C_SOURCE=200809L
 
 # Target executable
 TARGET = myshell
