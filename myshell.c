@@ -53,76 +53,89 @@ static int process_line(char *line) {
         return 1; // Skip it and continue shell loop
     }
 
-    // Extract first token
-    char *cmd = strtok(line, " \t");
-    if (cmd == NULL) {
-        return 1;
+    // Extract first word as the command
+    char *cmd = strtok(line, " \t"); // Set space and tab as delimiters
+    if (cmd == NULL) { // If no command
+        return 1; // Skip and continue with shell loop
     }
 
-    // Check for output redirection
-    char *outfile = NULL;
-    int append = 0;
+    // Vairables for I/O redirection and background execution
+    
+    char *outfile = NULL;      // Redirected output file
+    char *infile = NULL;       // Redirected input file
+    int append = 0;            // Flag for appending (0 --> overwrite file, 1 --> append to file)
+    int background = 0;        // Flag for background execution (0 --> not a background command, 1 --> a background command) 
+    char *args[64];            // Array of commands and arguments
+    int nargs = 0;             // Counter of arguments
+    args[nargs++] = cmd;       // Store first input, the command, in args[] and increment nargs
+    char *tok;                 // Variable to parse the remaining words in the command line
 
-    // Collect arguments and check for redirection
-    char *args[64];
-    int nargs = 0;
-    args[nargs++] = cmd;
+    while ((tok = strtok(NULL, " \t")) != NULL) { // Check each word/token (delimiters are space and tab) until NULL is reached
 
-    int background = 0;
-    char *tok;
-    char *infile = NULL;
-
-    while ((tok = strtok(NULL, " \t")) != NULL) {
-
+        // Input redirection
         if (strcmp(tok, "<") == 0) {
-            infile = strtok(NULL, " \t");
+            infile = strtok(NULL, " \t"); // Set the input file
         }
+
+        // Output redirection (Overwrite)
         else if (strcmp(tok, ">") == 0) {
-            outfile = strtok(NULL, " \t");
-            append = 0;
+            outfile = strtok(NULL, " \t"); // Set the output file
+            append = 0; // Overwrite file
         }
+
+        // Output redirection (Append)
         else if (strcmp(tok, ">>") == 0) {
-            outfile = strtok(NULL, " \t");
-            append = 1;
+            outfile = strtok(NULL, " \t"); // Set the output file
+            append = 1; // Append to file
         }
+
+        // Background execution
         else if (strcmp(tok, "&") == 0) {
-            background = 1;
+            background = 1; // Set the background execution flag
         }
+
+        // Regular argument
         else {
-            args[nargs++] = tok;
+            args[nargs++] = tok; // Store the argument in args[] and incrememnt nargs
         }
     }
-    args[nargs] = NULL;
+    
+    args[nargs] = NULL; // Indicate the end of the args array
 
-    int saved_stdout = -1;
-    if (outfile != NULL) {
+    // Redirection for internal commands
+    int saved_stdout = -1; // Indicates no redirection
+    if (outfile != NULL) { // If an output file is set
         saved_stdout = dup(1);  // save original stdout
 
         FILE *f;
+        // Append to the file
         if (append) {
             f = fopen(outfile, "a");
         }
+        // Overwrite the file
         else {
             f = fopen(outfile, "w");
         }
-        
+        // Error opening file
         if (f == NULL) {
-            perror("fopen");
+            perror("fopen"); // Return an error
             return 1;
         }
 
         dup2(fileno(f), 1);  // redirect stdout
-        fclose(f);
+        fclose(f);           // Close the file
     }
 
+    // Internal commands
+
     // quit command
-    if (strcmp(cmd, "quit") == 0) {
-        return 0;
+    if (strcmp(cmd, "quit") == 0) { // If the user types quit
+        return 0; // End the shell loop
     }
 
     // environ command
-    if (strcmp(cmd, "environ") == 0) {
-
+    if (strcmp(cmd, "environ") == 0) { // If the user types environ
+        
         extern char **environ;
         char **env = environ;
 
