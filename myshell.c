@@ -16,8 +16,9 @@ Requirements (Refer to the document for accuracy and details):
 
 */
 
-#define _XOPEN_SOURCE 700
+#define _XOPEN_SOURCE 700 // This is for POSIX functions like realpath()
 
+// Libraries
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -30,315 +31,328 @@ Requirements (Refer to the document for accuracy and details):
 
 
 
-#define MAX_LINE 1024
+#define MAX_LINE 1024 // Maximum length of input
 
 //Other functions needed ...
 
+// Reaping zombie processes from background execution
 static void reap_zombies(void) {
-    while (waitpid(-1, NULL, WNOHANG) > 0) {
-        // reaping zombie processes
-    }
+	while (waitpid(-1, NULL, WNOHANG) > 0) { // Loop to clean up any child processes that haven't exited
+	}
 }
 
+// Commands
 static int process_line(char *line) {
 
-    // Remove newline safely
-    char *newline = strchr(line, '\n');
-    if (newline != NULL) {
-        *newline = '\0';
-    }
+	// Remove newline character from fgets
+	char *newline = strchr(line, '\n');
+	if (newline != NULL) {
+		*newline = '\0'; // Instead of '\n' add the null terminator
+	}
 
-    // If empty line
-    if (line[0] == '\0') {
-        return 1;
-    }
+	// If empty line
+	if (line[0] == '\0') {
+		return 1; // Skip it and continue shell loop
+	}
 
-		// Extract first token
-		char *cmd = strtok(line, " \t");
-		if (cmd == NULL) {
-				return 1;
+	// Extract first token
+	char *cmd = strtok(line, " \t");
+	if (cmd == NULL) {
+		return 1;
+	}
+
+	// Check for output redirection
+	char *outfile = NULL;
+	int append = 0;
+
+	// Collect arguments and check for redirection
+	char *args[64];
+	int nargs = 0;
+	args[nargs++] = cmd;
+
+	int background = 0;
+	char *tok;
+	char *infile = NULL;
+
+	while ((tok = strtok(NULL, " \t")) != NULL) {
+
+		if (strcmp(tok, "<") == 0) {
+			infile = strtok(NULL, " \t");
 		}
 
-		// Check for output redirection
-		char *outfile = NULL;
-		int append = 0;
-
-		// Collect arguments and check for redirection
-		char *args[64];
-		int nargs = 0;
-		args[nargs++] = cmd;
-
-    int background = 0;
-		char *tok;
-    char *infile = NULL;
-
-    while ((tok = strtok(NULL, " \t")) != NULL) {
-
-        if (strcmp(tok, "<") == 0) {
-            infile = strtok(NULL, " \t");
-        }
-
-        else if (strcmp(tok, ">") == 0) {
-            outfile = strtok(NULL, " \t");
-            append = 0;
-        }
-
-        else if (strcmp(tok, ">>") == 0) {
-            outfile = strtok(NULL, " \t");
-            append = 1;
-        }
-
-        else if (strcmp(tok, "&") == 0) {
-          background = 1;
-        }
-
-        else {
-            args[nargs++] = tok;
-        }
-    }
-		args[nargs] = NULL;
-
-
-    int saved_stdout = -1;
-    if (outfile != NULL) {
-        saved_stdout = dup(1);  // save original stdout
-
-        FILE *f;
-        if (append) {
-            f = fopen(outfile, "a");
-        } else {
-            f = fopen(outfile, "w");
-        }
-
-        if (f == NULL) {
-            perror("fopen");
-            return 1;
-        }
-
-        dup2(fileno(f), 1);  // redirect stdout
-        fclose(f);
-    }
-
-    // quit command
-    if (strcmp(cmd, "quit") == 0) {
-        return 0;
-    }
-
-    // environ command
-    if (strcmp(cmd, "environ") == 0) {
-
-        extern char **environ;
-        char **env = environ;
-
-        while (*env != NULL) {
-            printf("%s\n", *env);
-            env++;
-        }
-
-        if (saved_stdout != -1) { dup2(saved_stdout, 1); close(saved_stdout); }
-        return 1;
-    }
-
-    // echo command
-		if (strcmp(cmd, "echo") == 0) {
-
-				for (int i = 1; args[i] != NULL; i++) {
-						printf("%s", args[i]);
-						if (args[i + 1] != NULL) {
-								printf(" ");
-						}
-				}
-
-				printf("\n");
-
-				if (saved_stdout != -1) {
-						dup2(saved_stdout, 1);
-						close(saved_stdout);
-				}
-
-				return 1;
+		else if (strcmp(tok, ">") == 0) {
+			outfile = strtok(NULL, " \t");
+			append = 0;
 		}
 
-    // cd command
-    if (strcmp(cmd, "cd") == 0) {
+		else if (strcmp(tok, ">>") == 0) {
+            		outfile = strtok(NULL, " \t");
+            		append = 1;
+        	}
 
-        char *dir = args[1];   // use parsed args instead of strtok again
+        	else if (strcmp(tok, "&") == 0) {
+          		background = 1;
+        	}
 
-        // If no argument → print current directory
-        if (dir == NULL) {
-            char cwd[PATH_MAX];
-            if (getcwd(cwd, sizeof(cwd)) != NULL) {
-                printf("%s\n", cwd);
-            } else {
-                perror("getcwd");
-            }
-            return 1;
-        }
+        	else {
+            		args[nargs++] = tok;
+        	}
+    	}
+	args[nargs] = NULL;
 
-        // Try changing directory
-        if (chdir(dir) != 0) {
-            perror("cd");
-            return 1;
-        }
 
-        // Update PWD environment variable
-        char cwd[PATH_MAX];
-        if (getcwd(cwd, sizeof(cwd)) != NULL) {
-            setenv("PWD", cwd, 1);
-        }
+    	int saved_stdout = -1;
+    	if (outfile != NULL) {
+        	saved_stdout = dup(1);  // save original stdout
 
-        return 1;
-    }
+        	FILE *f;
+        	if (append) {
+            		f = fopen(outfile, "a");
+        	}
+		else {
+            		f = fopen(outfile, "w");
+        	}
+        	if (f == NULL) {
+            		perror("fopen");
+            		return 1;
+        	}
 
-    // clr command
-    if (strcmp(cmd, "clr") == 0) {
-        printf("\033[2J\033[H");
-        fflush(stdout);  // make sure it happens immediately
-        return 1;
-    }
+        	dup2(fileno(f), 1);  // redirect stdout
+        	fclose(f);
+    	}
 
-		// help command
-		if (strcmp(cmd, "help") == 0) {
+    	// quit command
+    	if (strcmp(cmd, "quit") == 0) {
+        	return 0;
+    	}
 
-				// If output is redirected, just print file normally
-				if (outfile != NULL) {
+    	// environ command
+    	if (strcmp(cmd, "environ") == 0) {
 
-						FILE *f = fopen("readme", "r");
-						if (f == NULL) {
-								perror("help");
-						} else {
-								char buffer[1024];
-								while (fgets(buffer, sizeof(buffer), f)) {
-										printf("%s", buffer);
-								}
-								fclose(f);
-						}
+        	extern char **environ;
+        	char **env = environ;
 
-						if (saved_stdout != -1) {
-								dup2(saved_stdout, 1);
-								close(saved_stdout);
-						}
+        	while (*env != NULL) {
+            		printf("%s\n", *env);
+            		env++;
+        	}
 
-						return 1;
-				}
+        	if (saved_stdout != -1) {
+			dup2(saved_stdout, 1);
+			close(saved_stdout);
+		}
+        	return 1;
+    	}
 
-				// Otherwise use 'more' (interactive mode)
-				pid_t pid = fork();
+    	// echo command
+	if (strcmp(cmd, "echo") == 0) {
 
-				if (pid < 0) {
-						perror("fork");
-						return 1;
-				}
-
-				if (pid == 0) {
-						char *args[] = {"more", "readme", NULL};
-						execvp("more", args);
-						perror("execvp");
-						exit(1);
-				} else {
-						waitpid(pid, NULL, 0);
-				}
-
-				return 1;
+		for (int i = 1; args[i] != NULL; i++) {
+			printf("%s", args[i]);
+			if (args[i + 1] != NULL) {
+				printf(" ");
+			}
 		}
 
-    // pause command
-    if (strcmp(cmd, "pause") == 0) {
-        printf("Press Enter to continue...");
-        fflush(stdout);  // make sure message is printed
+		printf("\n");
 
-        while (getchar() != '\n') {
-            ; // wait until newline
-        }
+		if (saved_stdout != -1) {
+			dup2(saved_stdout, 1);
+			close(saved_stdout);
+		}
 
-        return 1;
-    }
+		return 1;
+	}
 
-    // dir command
-    if (strcmp(cmd, "dir") == 0) {
-        char *path = args[1];
+   	// cd command
+    	if (strcmp(cmd, "cd") == 0) {
 
-        // If no path is provided, use current directory
-        if (path == NULL) {
-            path = ".";
-        }
+        	char *dir = args[1];   // use parsed args instead of strtok again
 
-        DIR *dir = opendir(path);
-        if (dir == NULL) {
-            perror("dir");
-            if (saved_stdout != -1) { dup2(saved_stdout, 1); close(saved_stdout); }
-            return 1;
-        }
+        	// If no argument → print current directory
+        	if (dir == NULL) {
+            		char cwd[PATH_MAX];
+            		if (getcwd(cwd, sizeof(cwd)) != NULL) {
+                		printf("%s\n", cwd);
+            		}
+			else {
+                		perror("getcwd");
+            		}
+            		return 1;
+        	}
 
-        struct dirent *entry;
-        while ((entry = readdir(dir)) != NULL) {
-            printf("%s\n", entry->d_name);
-        }
+        	// Try changing directory
+        	if (chdir(dir) != 0) {
+            		perror("cd");
+            		return 1;
+        	}
 
-        closedir(dir);
-        if (saved_stdout != -1) { dup2(saved_stdout, 1); close(saved_stdout); }
-        return 1;
-    }
+        	// Update PWD environment variable
+        	char cwd[PATH_MAX];
+        	if (getcwd(cwd, sizeof(cwd)) != NULL) {
+            		setenv("PWD", cwd, 1);
+        	}
 
-    // Restore stdout (if not already restored)
-    if (saved_stdout != -1) {
-        dup2(saved_stdout, 1);
-        close(saved_stdout);
-    }
+       	 	return 1;
+    	}
 
-    // ---------- EXTERNAL COMMAND ----------
+    	// clr command
+    	if (strcmp(cmd, "clr") == 0) {
+        	printf("\033[2J\033[H");
+        	fflush(stdout);  // make sure it happens immediately
+        	return 1;
+    	}
 
-    pid_t pid = fork();
+	// help command
+	if (strcmp(cmd, "help") == 0) {
 
-    if (pid < 0) {
-        perror("fork");
-        return 1;
-    }
+		// If output is redirected, just print file normally
+		if (outfile != NULL) {
 
-    if (pid == 0) {
+			FILE *f = fopen("readme", "r");
+			if (f == NULL) {
+				perror("help");
+			}
+			else {
+				char buffer[1024];
+				while (fgets(buffer, sizeof(buffer), f)) {
+					printf("%s", buffer);
+				}
+				fclose(f);
+			}
+
+			if (saved_stdout != -1) {
+				dup2(saved_stdout, 1);
+				close(saved_stdout);
+			}
+
+			return 1;
+		}
+
+		// Otherwise use 'more' (interactive mode)
+		pid_t pid = fork();
+
+		if (pid < 0) {
+			perror("fork");
+			return 1;
+		}
+
+		if (pid == 0) {
+			char *args[] = {"more", "readme", NULL};
+			execvp("more", args);
+			perror("execvp");
+			exit(1);
+		}
+		else {
+			waitpid(pid, NULL, 0);
+		}
+
+		return 1;
+	}
+
+    	// pause command
+    	if (strcmp(cmd, "pause") == 0) {
+        	printf("Press Enter to continue...");
+        	fflush(stdout);  // make sure message is printed
+
+        	while (getchar() != '\n') {
+            		; // wait until newline
+        	}
+
+        	return 1;
+    	}
+
+    	// dir command
+    	if (strcmp(cmd, "dir") == 0) {
+        	char *path = args[1];
+
+        	// If no path is provided, use current directory
+        	if (path == NULL) {
+            		path = ".";
+        	}
+
+        	DIR *dir = opendir(path);
+        	if (dir == NULL) {
+            		perror("dir");
+            		if (saved_stdout != -1) {
+				dup2(saved_stdout, 1);
+				close(saved_stdout);
+			}
+            		return 1;
+        	}
+
+        	struct dirent *entry;
+        	while ((entry = readdir(dir)) != NULL) {
+            		printf("%s\n", entry->d_name);
+        	}
+
+        	closedir(dir);
+        	if (saved_stdout != -1) {
+			dup2(saved_stdout, 1);
+			close(saved_stdout);
+		}
+        	return 1;
+    	}
+
+    	// Restore stdout (if not already restored)
+    	if (saved_stdout != -1) {
+        	dup2(saved_stdout, 1);
+        	close(saved_stdout);
+    	}
+
+    	// ---------- EXTERNAL COMMAND ----------
+
+    	pid_t pid = fork();
+
+    	if (pid < 0) {
+        	perror("fork");
+        	return 1;
+    	}
+
+    	if (pid == 0) {
         // CHILD PROCESS
 
-        // INPUT REDIRECTION
-        if (infile != NULL) {
+        	// INPUT REDIRECTION
+        	if (infile != NULL) {
+            		FILE *f = fopen(infile, "r");
+            		if (f == NULL) {
+                		perror("fopen");
+                		exit(1);
+            		}
 
-            FILE *f = fopen(infile, "r");
-            if (f == NULL) {
-                perror("fopen");
-                exit(1);
-            }
+            		dup2(fileno(f), 0);  // redirect stdin
+            		fclose(f);
+        	}
 
-            dup2(fileno(f), 0);  // redirect stdin
-            fclose(f);
-        }
+        	// OUTPUT REDIRECTION
+        	if (outfile != NULL) {
+        		FILE *f;
+            		if (append) {
+                		f = fopen(outfile, "a");
+            		}
+			else {
+                		f = fopen(outfile, "w");
+            		}
 
-        // OUTPUT REDIRECTION
-        if (outfile != NULL) {
-            FILE *f;
-            if (append) {
-                f = fopen(outfile, "a");
-            } else {
-                f = fopen(outfile, "w");
-            }
+            		if (f == NULL) {
+                		perror("fopen");
+                		exit(1);
+            		}
 
-            if (f == NULL) {
-                perror("fopen");
-                exit(1);
-            }
-
-            dup2(fileno(f), 1);
-            fclose(f);
-        }
+            		dup2(fileno(f), 1);
+            		fclose(f);
+        	}
 
         // Set parent environment variable
         if (getenv("shell") != NULL) {
-            setenv("parent", getenv("shell"), 1);
+        	setenv("parent", getenv("shell"), 1);
         }
 
         execvp(cmd, args);
 
         perror("execvp");
         exit(1);
-    }
+	}
     else {
       if (!background) {
           waitpid(pid, NULL, 0);
