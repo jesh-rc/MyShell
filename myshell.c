@@ -139,32 +139,39 @@ static int process_line(char *line) {
         extern char **environ;
         char **env = environ;
 
+        // Print all the strings from the environ variable
         while (*env != NULL) {
             printf("%s\n", *env);
             env++;
         }
 
+        // If the user used redirection
         if (saved_stdout != -1) {
+            // Restore the original file descriptor
             dup2(saved_stdout, 1);
+            // Close the backup
             close(saved_stdout);
         }
-        return 1;
+        return 1; // End of command, continue shell loop
     }
 
     // echo command
     if (strcmp(cmd, "echo") == 0) {
-
+        // Print each argument
         for (int i = 1; args[i] != NULL; i++) {
             printf("%s", args[i]);
-            if (args[i + 1] != NULL) {
+            if (args[i + 1] != NULL) { // Add a space between each argument
                 printf(" ");
             }
         }
 
         printf("\n");
 
+        // If the user used redirection
         if (saved_stdout != -1) {
+            // Restore the original file descriptor
             dup2(saved_stdout, 1);
+            // Close the backup
             close(saved_stdout);
         }
 
