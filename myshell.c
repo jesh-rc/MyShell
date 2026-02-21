@@ -135,7 +135,8 @@ static int process_line(char *line) {
 
     // environ command
     if (strcmp(cmd, "environ") == 0) { // If the user types environ
-        
+
+		// Access the environment variables using the global variable 'environ'
         extern char **environ;
         char **env = environ;
 
@@ -175,252 +176,306 @@ static int process_line(char *line) {
             close(saved_stdout);
         }
 
-        return 1;
+        return 1; // End of command, continue shell loop
     }
 
     // cd command
     if (strcmp(cmd, "cd") == 0) {
 
-        char *dir = args[1];   // use parsed args instead of strtok again
+        char *dir = args[1]; // Get the directory argument
 
-        // If no argument → print current directory
+        // If no argument then print the current directory
         if (dir == NULL) {
             char cwd[PATH_MAX];
             if (getcwd(cwd, sizeof(cwd)) != NULL) {
                 printf("%s\n", cwd);
             }
+			// If there is an error getting the current directory, print an error message
             else {
                 perror("getcwd");
             }
-            return 1;
+            return 1; // End of command, continue shell loop
         }
 
-        // Try changing directory
+        // If changing directory fails, print an error message
         if (chdir(dir) != 0) {
             perror("cd");
             return 1;
         }
 
-        // Update PWD environment variable
+        // Update the PWD environment variable to reflect the new current directory
         char cwd[PATH_MAX];
         if (getcwd(cwd, sizeof(cwd)) != NULL) {
             setenv("PWD", cwd, 1);
         }
 
-        return 1;
+        return 1; // End of command, continue shell loop
     }
 
     // clr command
     if (strcmp(cmd, "clr") == 0) {
-        printf("\033[2J\033[H");
-        fflush(stdout);  // make sure it happens immediately
-        return 1;
+        printf("\033[2J\033[H"); // Clear the screen and move the cursor to the top-left corner
+        fflush(stdout); // Flush the output to ensure it is displayed immediately
+        return 1; // End of command, continue shell loop
     }
 
     // help command
     if (strcmp(cmd, "help") == 0) {
 
-        // If output is redirected, just print file normally
+        // If redirection is used
         if (outfile != NULL) {
-
+			// Print the contents of the readme file to the redirected output
             FILE *f = fopen("readme", "r");
+			// If there is an error opening the readme file, print an error message
             if (f == NULL) {
                 perror("help");
             }
+			// If the file is opened successfully, read and print its contents
             else {
-                char buffer[1024];
+                char buffer[1024]; // Buffer to hold each line of the readme file
+				// Read each line from the readme file and print it to the redirected output
                 while (fgets(buffer, sizeof(buffer), f)) {
                     printf("%s", buffer);
                 }
-                fclose(f);
+                fclose(f); // Close the readme file after reading
             }
-
+			// If the user used redirection
             if (saved_stdout != -1) {
+				// Restore the original file descriptor
                 dup2(saved_stdout, 1);
+				// Close the backup
                 close(saved_stdout);
             }
 
-            return 1;
+            return 1; // End of command, continue shell loop
         }
 
-        // Otherwise use 'more' (interactive mode)
+        // If no redirection then fork a child process to execute the more command to display the readme file
         pid_t pid = fork();
 
+		// If the process id is negative, it means the fork failed
         if (pid < 0) {
-            perror("fork");
-            return 1;
+            perror("fork"); // Print an error message
+            return 1; // End of command, continue shell loop
         }
-
+		// If process id is 0, this is the child process
         if (pid == 0) {
+			// Set up the arguments for the more command to display the readme file
             char *args[] = {"more", "readme", NULL};
-            execvp("more", args);
-            perror("execvp");
-            exit(1);
+            execvp("more", args); // Execute the more command to display the readme file
+            perror("execvp"); // If execvp returns, it means there was an error executing the command, so print an error message
+            exit(1); // Exit the child process with an error code
         }
+		// This is the parent process
         else {
-            waitpid(pid, NULL, 0);
+            waitpid(pid, NULL, 0); // Wait for the child process
         }
 
-        return 1;
+        return 1; // End of command, continue shell loop
     }
 
     // pause command
     if (strcmp(cmd, "pause") == 0) {
+		// Print a message prompting the user to press Enter to continue
         printf("Press Enter to continue...");
         fflush(stdout);  // make sure message is printed
 
+		// Wait for the user to press Enter by reading characters until a newline is encountered
         while (getchar() != '\n') {
             ; // wait until newline
         }
 
-        return 1;
+        return 1; // End of command, continue shell loop
     }
 
     // dir command
     if (strcmp(cmd, "dir") == 0) {
+		// Get the path argument for the dir command
         char *path = args[1];
 
         // If no path is provided, use current directory
         if (path == NULL) {
-            path = ".";
+            path = "."; // Set path to current directory
         }
-
+		
+		// Open the specified directory
         DIR *dir = opendir(path);
+		// If there was an error opening the directory
         if (dir == NULL) {
-            perror("dir");
+            perror("dir"); // Print an error
+			// If the user used redirection
             if (saved_stdout != -1) {
+				// Restore the original file descriptor
                 dup2(saved_stdout, 1);
+				// Close the backup
                 close(saved_stdout);
             }
-            return 1;
+            return 1; // End of command, continue shell loop
         }
-
+		// Read and print each entry in the directory
         struct dirent *entry;
+		// Loop through the directory entries and print their names
         while ((entry = readdir(dir)) != NULL) {
-            printf("%s\n", entry->d_name);
+            printf("%s\n", entry->d_name); // Print the name of the directory entry followed by a newline
         }
-
+		// Close the directory stream after reading
         closedir(dir);
+		 // If the user used redirection
         if (saved_stdout != -1) {
+			// Restore the original file descriptor
             dup2(saved_stdout, 1);
+			// Close the backup
             close(saved_stdout);
         }
-        return 1;
+        return 1; // End of command, continue shell loop
     }
 
     // Restore stdout (if not already restored)
     if (saved_stdout != -1) {
+		// Restore the original file descriptor
         dup2(saved_stdout, 1);
+		// Close the backup
         close(saved_stdout);
     }
 
     // ---------- EXTERNAL COMMAND ----------
 
+	// Fork a child process to execute external commands
     pid_t pid = fork();
 
+	// If the process id is negative, it means the fork failed
     if (pid < 0) {
-        perror("fork");
-        return 1;
+        perror("fork"); // Print an error message
+        return 1; // End of command, continue shell loop
     }
-
+	// If process id is 0, this is the child process
     if (pid == 0) {
-        // CHILD PROCESS
 
-        // INPUT REDIRECTION
+		// If an input file is set
         if (infile != NULL) {
+			// Open the input file for reading
             FILE *f = fopen(infile, "r");
+			// If there was an error opening the file
             if (f == NULL) {
-                perror("fopen");
-                exit(1);
+                perror("fopen"); // Print an error
+                exit(1); // Exit the child process with an error code
             }
-
-            dup2(fileno(f), 0);  // redirect stdin
-            fclose(f);
+			// Redirect stdin to the input file using dup2, which duplicates the file descriptor of the opened file onto the standard input (fd 0)
+            dup2(fileno(f), 0);
+            fclose(f); // Close the file after redirecting
         }
 
-        // OUTPUT REDIRECTION
+        // If an output file is set
         if (outfile != NULL) {
+			// Open the output file for writing
             FILE *f;
+			// If append flag is set
             if (append) {
+				// Open the file in append mode
                 f = fopen(outfile, "a");
             }
+			// If append flag is not set
             else {
+				// Open the file in overwrite mode
                 f = fopen(outfile, "w");
             }
-
+			// If there was an error opening the file
             if (f == NULL) {
-                perror("fopen");
-                exit(1);
+                perror("fopen"); // Print an error
+                exit(1); // Exit the child process with an error code
             }
-
+			// Redirect stdout to the output file using dup2, which duplicates the file descriptor of the opened file onto the standard output (fd 1)
             dup2(fileno(f), 1);
-            fclose(f);
+            fclose(f); // Close the file after redirecting
         }
 
-        // Set parent environment variable
+        // Set the "parent" environment variable to the value of "shell" if it exists
         if (getenv("shell") != NULL) {
             setenv("parent", getenv("shell"), 1);
         }
-
+		// Execute the external command using execvp, which replaces the current process image with a new program specified by cmd and args
         execvp(cmd, args);
-
+		// If execvp returns, it means there was an error executing the command, so print an error message
         perror("execvp");
-        exit(1);
+        exit(1); // Exit the child process with an error code
     }
+	// This is the parent process
     else {
+		// If the background execution flag is not set
         if (!background) {
-            waitpid(pid, NULL, 0);
+            waitpid(pid, NULL, 0); // Wait for the child process
         }
+		// If the background execution flag is set
         else {
-            printf("[background pid %d]\n", pid);
+            printf("[background pid %d]\n", pid); // Print the background process ID to the user
         }
     }
 
-    return 1;
+    return 1; // End of command, continue shell loop
 }
 
+// Main function
 int main(int argc, char *argv[]) {
     // Set environment variable "shell" to full path of myshell
     char fullpath[PATH_MAX];
-
+	// Use realpath to resolve the full path of the myshell executable and store it in fullpath
     if (argc >= 1 && realpath(argv[0], fullpath) == NULL) {
-        perror("realpath");
-        exit(1);
+        perror("realpath"); // If there was an error resolving the full path, print an error message
+        exit(1); // Exit the program with an error code
     }
-
+	// Set the "shell" environment variable to the full path of myshell using setenv
     if (setenv("shell", fullpath, 1) != 0) {
-        perror("setenv");
-        exit(1);
+        perror("setenv"); // If there was an error setting the environment variable, print an error message
+        exit(1); // Exit the program with an error code
     }
-
+	// Initialize the input stream to standard input (stdin)
     FILE *in = stdin;
+	// If a batch file is provided as a command-line argument, open it for reading and set the input stream to the file
     if (argc == 2) {
-        in = fopen(argv[1], "r");
-        if (!in) { perror("fopen"); return 1; }
+        in = fopen(argv[1], "r"); // Open the batch file for reading
+		// If there was an error opening the batch file, print an error message and exit
+        if (!in) {
+			perror("fopen");
+			return 1;
+		}
+	// If the batch file is opened successfully
     } else if (argc > 2) {
-        fprintf(stderr, "Usage: %s [batchfile]\n", argv[0]);
-        return 1;
+        fprintf(stderr, "Usage: %s [batchfile]\n", argv[0]); // Print usage message if too many arguments are provided
+        return 1; // Exit the program with an error code
     }
 
+	// Buffer to hold the input line and current working directory
     char line[MAX_LINE];
+	// Buffer to hold the current working directory, used for displaying the prompt
     char cwd[PATH_MAX];
 
+	// Main shell loop
     while (1) {
+		// Reap any zombie processes from background execution before displaying the prompt and reading the next command
         reap_zombies();
 
+		// If the input stream is standard input
         if (in == stdin) {
-            if (getcwd(cwd, sizeof(cwd)) == NULL) { perror("getcwd"); break; }
-            printf(">myshell:%s$ ", cwd);
-            fflush(stdout);
+            if (getcwd(cwd, sizeof(cwd)) == NULL) { // Check for errors in getting the current working directory
+				perror("getcwd"); // If there was an error, print an error message
+				break; // Exit the shell loop
+			}
+            printf(">myshell:%s$ ", cwd); // Display the prompt with the current working directory
+            fflush(stdout); // Flush the output to ensure the prompt is displayed immediately
         }
+		// Read a line of input from user or bactch file until EOF
+        if (!fgets(line, sizeof(line), in))
+			break; // If there was an error reading the line (e.g., EOF), break out of the shell loop
 
-        if (!fgets(line, sizeof(line), in)) break; // EOF => exit (batch requirement)
-
-        if (process_line(line) == 0) break;
+		// Process the input line and execute the command
+        if (process_line(line) == 0) // If 0, then it is the quit command
+			break; // Exit the shell loop
     }
+	// If the input stream is not standard input
+    if (in != stdin)
+		fclose(in); // Close the batch file if it was opened
 
-    if (in != stdin) fclose(in);
-    return 0;
+    return 0; // Exit the program with a success code
 }
 
 /*
